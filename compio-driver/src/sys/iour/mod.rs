@@ -293,6 +293,26 @@ impl Driver {
             submitter.register_eventfd(fd)?;
         }
 
+        if let Some(ref napi_config) = builder.napi_config {
+            use crate::NapiTracking;
+            use io_uring::types;
+
+            let tracking = match &napi_config.tracking {
+                NapiTracking::Dynamic => types::IO_URING_NAPI_TRACKING_DYNAMIC,
+                NapiTracking::Static => types::IO_URING_NAPI_TRACKING_STATIC,
+            };
+
+            let mut napi = types::io_uring_napi {
+                busy_poll_to: napi_config.busy_poll_timeout.as_micros() as u32,
+                prefer_busy_poll: u8::from(napi_config.prefer_busy_poll),
+                opcode: types::IO_URING_NAPI_REGISTER_OP as u8,
+                op_param: tracking,
+                ..Default::default()
+            };
+
+            submitter.register_napi(&mut napi)?;
+        }
+
         let (completed_tx, completed_rx) = flume::unbounded();
 
         Ok(Self {

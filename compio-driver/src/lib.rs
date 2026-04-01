@@ -502,6 +502,39 @@ impl ThreadPoolBuilder {
     }
 }
 
+/// NAPI busy-poll tracking mode.
+#[derive(Debug, Clone, Default)]
+pub enum NapiTracking {
+    /// Kernel auto-discovers NAPI IDs from sockets. Available since 6.9.
+    #[default]
+    Dynamic,
+    /// Application manually specifies NAPI IDs. Available since 6.13.
+    Static,
+}
+
+/// Configuration for NAPI busy-poll on an io_uring ring.
+///
+/// Requires Linux 6.9+.
+#[derive(Debug, Clone)]
+pub struct NapiConfig {
+    /// Busy-poll timeout. Zero uses the system default.
+    pub busy_poll_timeout: Duration,
+    /// Prefer busy-polling even when other tasks are runnable.
+    pub prefer_busy_poll: bool,
+    /// NAPI tracking mode.
+    pub tracking: NapiTracking,
+}
+
+impl Default for NapiConfig {
+    fn default() -> Self {
+        Self {
+            busy_poll_timeout: Duration::ZERO,
+            prefer_busy_poll: false,
+            tracking: NapiTracking::default(),
+        }
+    }
+}
+
 /// Builder for [`Proactor`].
 #[derive(Debug, Clone)]
 pub struct ProactorBuilder {
@@ -513,6 +546,7 @@ pub struct ProactorBuilder {
     eventfd: Option<RawFd>,
     driver_type: Option<DriverType>,
     op_flags: OpCodeFlag,
+    napi_config: Option<NapiConfig>,
 }
 
 // SAFETY: `RawFd` is thread safe.
@@ -537,6 +571,7 @@ impl ProactorBuilder {
             eventfd: None,
             driver_type: None,
             op_flags: OpCodeFlag::empty(),
+            napi_config: None,
         }
     }
 
@@ -641,6 +676,17 @@ impl ProactorBuilder {
     /// - Only effective when the `io-uring` feature is enabled
     pub fn register_eventfd(&mut self, fd: RawFd) -> &mut Self {
         self.eventfd = Some(fd);
+        self
+    }
+
+    /// Enable NAPI busy-poll on the io_uring ring.
+    ///
+    /// # Notes
+    ///
+    /// - Available since Linux 6.9.
+    /// - Only effective when the `io-uring` feature is enabled.
+    pub fn napi_busy_poll(&mut self, config: NapiConfig) -> &mut Self {
+        self.napi_config = Some(config);
         self
     }
 
