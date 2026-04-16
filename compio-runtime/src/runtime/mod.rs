@@ -22,7 +22,11 @@ use compio_log::{debug, instrument};
 use futures_util::FutureExt;
 
 mod future;
+#[cfg(all(target_os = "linux", feature = "io-uring"))]
+mod linked;
 pub use future::Submit;
+#[cfg(all(target_os = "linux", feature = "io-uring"))]
+pub use linked::{SubmitLinkedPair, SubmitLinkedTriple};
 
 #[cfg(feature = "time")]
 pub(crate) mod time;
@@ -248,6 +252,34 @@ impl Runtime {
     /// You only need this when authoring your own [`OpCode`].
     fn submit<T: OpCode + 'static>(&self, op: T) -> Submit<T> {
         Submit::new(self.clone(), op)
+    }
+
+    /// Submit two operations as an io_uring linked pair.
+    ///
+    /// The kernel executes `op2` only after `op1` completes
+    /// successfully. If `op1` fails, `op2` is cancelled.
+    #[cfg(all(target_os = "linux", feature = "io-uring"))]
+    fn submit_linked_pair<T1: OpCode + 'static, T2: OpCode + 'static>(
+        &self,
+        op1: T1,
+        op2: T2,
+    ) -> SubmitLinkedPair<T1, T2> {
+        SubmitLinkedPair::new(self.clone(), op1, op2)
+    }
+
+    /// Submit three operations as an io_uring linked chain.
+    #[cfg(all(target_os = "linux", feature = "io-uring"))]
+    fn submit_linked_triple<
+        T1: OpCode + 'static,
+        T2: OpCode + 'static,
+        T3: OpCode + 'static,
+    >(
+        &self,
+        op1: T1,
+        op2: T2,
+        op3: T3,
+    ) -> SubmitLinkedTriple<T1, T2, T3> {
+        SubmitLinkedTriple::new(self.clone(), op1, op2, op3)
     }
 
     pub(crate) fn cancel<T: OpCode>(&self, op: Key<T>) {
@@ -537,6 +569,34 @@ pub fn spawn_blocking<T: Send + 'static>(
 /// [`Runtime::with_current`].
 pub fn submit<T: OpCode + 'static>(op: T) -> Submit<T> {
     Runtime::with_current(|r| r.submit(op))
+}
+
+/// Submit two operations as an io_uring linked pair to the current runtime.
+///
+/// ## Panics
+///
+/// This method doesn't create runtime and will panic if it's not within a
+/// runtime.
+#[cfg(all(target_os = "linux", feature = "io-uring"))]
+pub fn submit_linked_pair<T1: OpCode + 'static, T2: OpCode + 'static>(
+    op1: T1,
+    op2: T2,
+) -> SubmitLinkedPair<T1, T2> {
+    Runtime::with_current(|r| r.submit_linked_pair(op1, op2))
+}
+
+/// Submit three operations as an io_uring linked chain to the current runtime.
+#[cfg(all(target_os = "linux", feature = "io-uring"))]
+pub fn submit_linked_triple<
+    T1: OpCode + 'static,
+    T2: OpCode + 'static,
+    T3: OpCode + 'static,
+>(
+    op1: T1,
+    op2: T2,
+    op3: T3,
+) -> SubmitLinkedTriple<T1, T2, T3> {
+    Runtime::with_current(|r| r.submit_linked_triple(op1, op2, op3))
 }
 
 /// Submit an operation to the current runtime, and return a future for it with

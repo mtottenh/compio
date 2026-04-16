@@ -173,6 +173,47 @@ impl Proactor {
         }
     }
 
+    /// Push two operations as an io_uring linked chain.
+    ///
+    /// Sets `IOSQE_IO_LINK` on the first entry. Each gets its own
+    /// [`Key`] and produces an independent CQE. If the first op fails,
+    /// the second is cancelled by the kernel.
+    #[cfg(all(target_os = "linux", feature = "io-uring"))]
+    pub fn push_linked_pair<T1: sys::OpCode + 'static, T2: sys::OpCode + 'static>(
+        &mut self,
+        op1: T1,
+        op2: T2,
+    ) -> io::Result<(Key<T1>, Key<T2>)> {
+        let key1 = Key::new(op1, self.default_extra());
+        let key2 = Key::new(op2, self.default_extra());
+        self.driver
+            .push_linked(vec![key1.clone().erase(), key2.clone().erase()])?;
+        Ok((key1, key2))
+    }
+
+    /// Push three operations as an io_uring linked chain.
+    #[cfg(all(target_os = "linux", feature = "io-uring"))]
+    pub fn push_linked_triple<
+        T1: sys::OpCode + 'static,
+        T2: sys::OpCode + 'static,
+        T3: sys::OpCode + 'static,
+    >(
+        &mut self,
+        op1: T1,
+        op2: T2,
+        op3: T3,
+    ) -> io::Result<(Key<T1>, Key<T2>, Key<T3>)> {
+        let key1 = Key::new(op1, self.default_extra());
+        let key2 = Key::new(op2, self.default_extra());
+        let key3 = Key::new(op3, self.default_extra());
+        self.driver.push_linked(vec![
+            key1.clone().erase(),
+            key2.clone().erase(),
+            key3.clone().erase(),
+        ])?;
+        Ok((key1, key2, key3))
+    }
+
     /// Poll the driver and get completed entries.
     /// You need to call [`Proactor::pop`] to get the pushed
     /// operations.

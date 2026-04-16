@@ -72,6 +72,9 @@ thiserror = "2.0.3"
 smallvec = "1.13.2"
 synchrony = "0.1.1"
 
+[patch.crates-io]
+io-uring = { path = "../io-uring" }
+
 [profile.bench]
 debug = true
 lto = true

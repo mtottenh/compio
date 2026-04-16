@@ -49,6 +49,7 @@ block2 = "0.6.0"
 
 [features]
 event = ["dep:cfg-if", "compio-buf/arrayvec"]
+io-uring = ["compio-driver/io-uring"]
 time = []
 
 # Enable it to always notify the driver when a task schedules.

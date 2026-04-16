@@ -67,6 +67,12 @@ pub(crate) fn is_op_supported(code: u8) -> bool {
         .unwrap_or_default()
 }
 
+/// Check whether the kernel supports `IORING_OP_URING_CMD` (needed for
+/// linked `GetSockOpt` via io_uring). Returns `false` on kernels < 6.0.
+pub fn is_uring_cmd_supported() -> bool {
+    is_op_supported(io_uring::opcode::UringCmd16::CODE)
+}
+
 /// The created entry of [`OpCode`].
 pub enum OpEntry {
     /// This operation creates an io-uring submission entry.
@@ -458,6 +464,55 @@ impl Driver {
         unsafe { buffer_pool.into_inner().release(&self.inner)? };
         self.buffer_group_ids.remove(buffer_group as _);
 
+        Ok(())
+    }
+
+    /// Submit multiple SQEs as an io_uring linked chain.
+    ///
+    /// Sets `IOSQE_IO_LINK` on all entries except the last. Each entry
+    /// gets its own `user_data` (ErasedKey) and produces an independent
+    /// CQE — existing completion handling works unchanged.
+    ///
+    /// If any entry in the chain fails, subsequent entries are cancelled
+    /// by the kernel (they receive `-ECANCELED`).
+    pub fn push_linked(&mut self, keys: Vec<ErasedKey>) -> io::Result<()> {
+        let len = keys.len();
+        for (i, key) in keys.into_iter().enumerate() {
+            let personality = key.borrow().extra().as_iour().get_personality();
+            let entry = key
+                .borrow()
+                .pinned_op()
+                .create_entry()
+                .personality(personality);
+            let is_last = i == len - 1;
+
+            match entry {
+                OpEntry::Submission(entry) => {
+                    let entry = if is_last {
+                        entry
+                    } else {
+                        entry.flags(io_uring::squeue::Flags::IO_LINK)
+                    };
+                    #[allow(clippy::useless_conversion)]
+                    self.push_raw_with_key(entry.into(), key)?;
+                }
+                #[cfg(feature = "io-uring-sqe128")]
+                OpEntry::Submission128(entry) => {
+                    let entry = if is_last {
+                        entry
+                    } else {
+                        entry.flags(io_uring::squeue::Flags::IO_LINK)
+                    };
+                    self.push_raw_with_key(entry, key)?;
+                }
+                OpEntry::Blocking => {
+                    return Err(io::Error::new(
+                        io::ErrorKind::Unsupported,
+                        "linked chain entries must be io_uring submissions",
+                    ));
+                }
+            }
+        }
         Ok(())
     }
 }

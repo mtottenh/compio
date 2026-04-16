@@ -793,3 +793,37 @@ impl<S1, S2> Splice<S1, S2> {
         }
     }
 }
+
+use std::mem::MaybeUninit;
+
+/// Get a socket option asynchronously.
+///
+/// On io_uring, this uses `IORING_OP_URING_CMD` with
+/// `SOCKET_URING_OP_GETSOCKOPT`. On other backends, falls back to blocking
+/// `getsockopt(2)`.
+pub struct GetSockOpt<T: Copy + 'static, S> {
+    pub(crate) fd: S,
+    pub(crate) level: i32,
+    pub(crate) optname: i32,
+    pub(crate) value: MaybeUninit<T>,
+}
+
+impl<T: Copy + 'static, S> GetSockOpt<T, S> {
+    /// Create [`GetSockOpt`].
+    pub fn new(fd: S, level: i32, optname: i32) -> Self {
+        Self {
+            fd,
+            level,
+            optname,
+            value: MaybeUninit::zeroed(),
+        }
+    }
+}
+
+impl<T: Copy + 'static, S> IntoInner for GetSockOpt<T, S> {
+    type Inner = T;
+
+    fn into_inner(self) -> Self::Inner {
+        unsafe { self.value.assume_init() }
+    }
+}

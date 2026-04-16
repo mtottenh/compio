@@ -178,6 +178,72 @@ impl Socket {
         unsafe { res.map_vec_advanced() }
     }
 
+    /// Recv with a linked getsockopt observation.
+    ///
+    /// Submits a `Recv` SQE linked (`IOSQE_IO_LINK`) to a `GetSockOpt`
+    /// SQE. The kernel executes the getsockopt atomically after the
+    /// recv completes, before any other SQE on this fd.
+    ///
+    /// # Safety
+    ///
+    /// `T` must be the correct type for `level`/`optname`.
+    #[cfg(all(target_os = "linux", feature = "io-uring"))]
+    pub async unsafe fn recv_observe<B: IoBufMut, T: Copy + 'static>(
+        &self,
+        buffer: B,
+        recv_flags: i32,
+        level: i32,
+        optname: i32,
+    ) -> io::Result<(BufResult<usize, B>, T)> {
+        use compio_driver::op::GetSockOpt;
+
+        let fd = self.to_shared_fd();
+        let recv_op = Recv::new(fd.clone(), buffer, recv_flags);
+        let sockopt_op = GetSockOpt::<T, _>::new(fd, level, optname);
+
+        let (recv_res, sockopt_res) =
+            compio_runtime::submit_linked_pair(recv_op, sockopt_op).await?;
+
+        let recv_buf = unsafe { recv_res.into_inner().map_advanced() };
+        let sockopt_val = sockopt_res.0.map(|_| sockopt_res.1.into_inner())?;
+        Ok((recv_buf, sockopt_val))
+    }
+
+    /// Recv with two linked getsockopt observations (3-SQE chain).
+    ///
+    /// # Safety
+    ///
+    /// `T1` and `T2` must be correct types for their respective `level`/`optname`.
+    #[cfg(all(target_os = "linux", feature = "io-uring"))]
+    pub async unsafe fn recv_observe2<
+        B: IoBufMut,
+        T1: Copy + 'static,
+        T2: Copy + 'static,
+    >(
+        &self,
+        buffer: B,
+        recv_flags: i32,
+        level1: i32,
+        optname1: i32,
+        level2: i32,
+        optname2: i32,
+    ) -> io::Result<(BufResult<usize, B>, T1, T2)> {
+        use compio_driver::op::GetSockOpt;
+
+        let fd = self.to_shared_fd();
+        let recv_op = Recv::new(fd.clone(), buffer, recv_flags);
+        let sockopt_op1 = GetSockOpt::<T1, _>::new(fd.clone(), level1, optname1);
+        let sockopt_op2 = GetSockOpt::<T2, _>::new(fd, level2, optname2);
+
+        let (recv_res, so1_res, so2_res) =
+            compio_runtime::submit_linked_triple(recv_op, sockopt_op1, sockopt_op2).await?;
+
+        let recv_buf = unsafe { recv_res.into_inner().map_advanced() };
+        let val1 = so1_res.0.map(|_| so1_res.1.into_inner())?;
+        let val2 = so2_res.0.map(|_| so2_res.1.into_inner())?;
+        Ok((recv_buf, val1, val2))
+    }
+
     pub async fn recv_managed<'a>(
         &self,
         buffer_pool: &'a BufferPool,

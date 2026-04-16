@@ -45,6 +45,7 @@ futures-util = { workspace = true }
 tempfile = { workspace = true }
 
 [features]
+io-uring = ["compio-driver/io-uring", "compio-runtime/io-uring"]
 # Nightly features
 once_cell_try = []
 nightly = ["once_cell_try"]

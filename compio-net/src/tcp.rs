@@ -318,6 +318,47 @@ impl TcpStream {
         self.inner.socket.set_tcp_nodelay(nodelay)
     }
 
+    /// Recv with a linked getsockopt observation.
+    ///
+    /// Submits a `Recv` SQE linked to a `GetSockOpt` SQE. The kernel
+    /// executes them atomically.
+    ///
+    /// # Safety
+    ///
+    /// `T` must be the correct type for `level`/`optname`.
+    #[cfg(all(target_os = "linux", feature = "io-uring"))]
+    pub async unsafe fn recv_observe<B: IoBufMut, T: Copy + 'static>(
+        &self,
+        buffer: B,
+        recv_flags: i32,
+        level: i32,
+        optname: i32,
+    ) -> io::Result<(BufResult<usize, B>, T)> {
+        unsafe { self.inner.recv_observe(buffer, recv_flags, level, optname).await }
+    }
+
+    /// Recv with two linked getsockopt observations (3-SQE chain).
+    ///
+    /// # Safety
+    ///
+    /// `T1`/`T2` must be correct types for their `level`/`optname`.
+    #[cfg(all(target_os = "linux", feature = "io-uring"))]
+    pub async unsafe fn recv_observe2<
+        B: IoBufMut,
+        T1: Copy + 'static,
+        T2: Copy + 'static,
+    >(
+        &self,
+        buffer: B,
+        recv_flags: i32,
+        level1: i32, optname1: i32,
+        level2: i32, optname2: i32,
+    ) -> io::Result<(BufResult<usize, B>, T1, T2)> {
+        unsafe {
+            self.inner.recv_observe2(buffer, recv_flags, level1, optname1, level2, optname2).await
+        }
+    }
+
     /// Sends out-of-band data on this socket.
     ///
     /// Out-of-band data is sent with the `MSG_OOB` flag.

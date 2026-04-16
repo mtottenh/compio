@@ -1029,3 +1029,33 @@ mod buf_ring {
 }
 
 pub use buf_ring::{ReadManaged, ReadManagedAt, RecvManaged};
+
+unsafe impl<T: Copy + 'static, S: AsFd> OpCode for GetSockOpt<T, S> {
+    fn create_entry(self: Pin<&mut Self>) -> OpEntry {
+        // SAFETY: GetSockOpt has no self-referential fields.
+        let this = unsafe { self.get_unchecked_mut() };
+        opcode::GetSockOpt::new(
+            Fd(this.fd.as_fd().as_raw_fd()),
+            this.level as u32,
+            this.optname as u32,
+            this.value.as_mut_ptr() as *mut libc::c_void,
+            std::mem::size_of::<T>() as u32,
+        )
+        .build()
+        .into()
+    }
+
+    fn call_blocking(self: Pin<&mut Self>) -> io::Result<usize> {
+        // SAFETY: GetSockOpt has no self-referential fields.
+        let this = unsafe { self.get_unchecked_mut() };
+        let mut optlen = std::mem::size_of::<T>() as libc::socklen_t;
+        syscall!(libc::getsockopt(
+            this.fd.as_fd().as_raw_fd(),
+            this.level,
+            this.optname,
+            this.value.as_mut_ptr() as _,
+            &mut optlen,
+        ))?;
+        Ok(optlen as usize)
+    }
+}

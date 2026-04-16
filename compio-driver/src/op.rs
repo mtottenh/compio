@@ -13,8 +13,8 @@ use socket2::{SockAddr, SockAddrStorage, socklen_t};
 #[cfg(linux_all)]
 pub use crate::sys::op::Splice;
 pub use crate::sys::op::{
-    Accept, Recv, RecvFrom, RecvFromVectored, RecvMsg, RecvVectored, Send, SendMsg, SendTo,
-    SendToVectored, SendVectored,
+    Accept, GetSockOpt, Recv, RecvFrom, RecvFromVectored, RecvMsg, RecvVectored, Send, SendMsg,
+    SendTo, SendToVectored, SendVectored,
 };
 #[cfg(windows)]
 pub use crate::sys::op::{ConnectNamedPipe, DeviceIoControl};
